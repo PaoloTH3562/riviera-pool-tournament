@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102b3f">
+  <title>Live Standings | Riviera Pool Tournament 2026</title>
+  <style>
+    :root { color-scheme: light; --navy:#102b3f; --blue:#183c58; --sand:#fff3e6; --line:#dce5ea; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:#f1f5f7; color:#172b3a; font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif; }
+    header { background:var(--navy); color:white; padding:28px 16px 24px; text-align:center; }
+    header .eyebrow { font-size:12px; letter-spacing:.16em; font-weight:700; opacity:.8; }
+    h1 { font-size:clamp(23px,5vw,36px); margin:8px 0 4px; line-height:1.2; }
+    header p { margin:0; color:#d4e2e9; }
+    main { max-width:960px; margin:0 auto; padding:22px 14px 34px; }
+    .group { background:white; border-radius:12px; overflow:hidden; box-shadow:0 3px 15px #102b3f12; margin-bottom:20px; }
+    h2 { margin:0; background:var(--blue); color:white; font-size:17px; letter-spacing:.05em; padding:14px 16px; }
+    .table-wrap { padding:8px 12px 14px; }
+    table { border-collapse:collapse; width:100%; table-layout:auto; font-variant-numeric:tabular-nums; }
+    th, td { padding:12px 8px; text-align:center; border-bottom:1px solid var(--line); white-space:nowrap; }
+    th { font-size:12px; text-transform:uppercase; letter-spacing:.03em; color:#456273; }
+    td { font-size:14px; }
+    tbody tr:nth-child(even) { background:#f6f9fb; }
+    tbody tr:last-child td { border-bottom:0; }
+    td.player, th.player { text-align:left; white-space:normal; overflow-wrap:anywhere; }
+    td.rank { font-weight:750; }
+    td.points { font-weight:800; }
+    .message { padding:18px 12px; margin:0; color:#566b78; }
+    .message.error { color:#a52727; }
+    .actions { text-align:center; margin-top:25px; }
+    .back { display:inline-block; background:var(--navy); color:white; text-decoration:none; padding:13px 20px; border-radius:9px; font-weight:700; }
+    .back:focus-visible { outline:3px solid #e2a34e; outline-offset:3px; }
+    .updated { text-align:center; color:#647786; font-size:12px; margin:18px 0 0; }
+    @media(max-width:620px) {
+      main { padding:14px 10px 28px; }
+      .group { border-radius:9px; margin-bottom:14px; }
+      .table-wrap { padding:4px 8px 9px; }
+      th,td { padding:11px 5px; }
+      td { font-size:13px; }
+      th { font-size:11px; }
+      .desktop-only { display:none; }
+      td.player,th.player { width:55%; }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <div class="eyebrow">RIVIERA POOL TOURNAMENT 2026</div>
+  <h1>Live Standings</h1>
+  <p>Group stage · 8-ball</p>
+</header>
+<main>
+  <section class="group" aria-labelledby="group-a-title">
+    <h2 id="group-a-title">GROUP A</h2>
+    <div class="table-wrap" id="group-a"><p class="message">Loading standings…</p></div>
+  </section>
+  <section class="group" aria-labelledby="group-b-title">
+    <h2 id="group-b-title">GROUP B</h2>
+    <div class="table-wrap" id="group-b"><p class="message">Loading standings…</p></div>
+  </section>
+  <div class="actions"><a class="back" href="https://sites.google.com/view/rivierapooltournament">← Back to tournament website</a></div>
+  <p class="updated" id="updated">Standings are loaded from the published tournament spreadsheet.</p>
+</main>
+<script>
+  const base = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQIJWHYxmMH4n2xus-mvR87gF-_EWi9LsDuHlMFzwlrH3cAfZWw55fcx4jfUft8eQ/pub';
+  const groups = [
+    {id:'group-a',gid:'826084290'},
+    {id:'group-b',gid:'491986124'}
+  ];
+  // Handle quoted commas, escaped quotes, and line breaks in published CSV.
+  function parseCSV(text) {
+    const rows=[]; let row=[], value='', quoted=false;
+    for(let i=0;i<text.length;i++) {
+      const ch=text[i];
+      if(ch==='"') {
+        if(quoted && text[i+1]==='"') { value+='"'; i++; }
+        else quoted=!quoted;
+      } else if(ch===',' && !quoted) { row.push(value); value=''; }
+      else if((ch==='\n'||ch==='\r') && !quoted) {
+        if(ch==='\r' && text[i+1]==='\n') i++;
+        row.push(value); rows.push(row); row=[]; value='';
+      } else value+=ch;
+    }
+    if(value!=='' || row.length) { row.push(value); rows.push(row); }
+    return rows;
+  }
+  function renderTable(rows) {
+    const index=rows.findIndex(r=>r[0]?.trim().toLowerCase()==='rank' && r[1]?.trim().toLowerCase()==='player');
+    if(index<0) throw new Error('Standings header not found');
+    const headers=rows[index].map(x=>x.trim());
+    const wanted=['Rank','Player','P','W','L','FW','FL','Diff','Pts'];
+    const col=wanted.map(name=>headers.findIndex(h=>h.toLowerCase()===name.toLowerCase()));
+    if(col.some(i=>i<0)) throw new Error('Missing standings columns');
+    const players=rows.slice(index+1).filter(r=>/^\d+$/.test((r[col[0]]||'').trim()) && (r[col[1]]||'').trim());
+    const table=document.createElement('table');
+    const head=document.createElement('thead');
+    const hrow=document.createElement('tr');
+    const mobileOrder=['Rank','Player','Pts','Diff'];
+    // Desktop retains the spreadsheet order; mobile is a separate table below.
+    function build(columns,cls) {
+      const t=document.createElement('table'); t.className=cls;
+      const thd=document.createElement('thead'), tr=document.createElement('tr');
+      columns.forEach(name=>{ const th=document.createElement('th'); th.textContent=name; if(name==='Player')th.className='player'; tr.appendChild(th); });
+      thd.appendChild(tr); t.appendChild(thd);
+      const body=document.createElement('tbody');
+      players.forEach(r=>{ const tr=document.createElement('tr'); columns.forEach(name=>{
+        const td=document.createElement('td'); td.textContent=r[col[wanted.indexOf(name)]]||'';
+        if(name==='Player')td.className='player'; if(name==='Rank')td.className='rank'; if(name==='Pts')td.className='points';
+        tr.appendChild(td);
+      });body.appendChild(tr); });
+      t.appendChild(body); return t;
+    }
+    const desktop=build(wanted,'desktop-table');
+    const mobile=build(mobileOrder,'mobile-table');
+    // Explicit responsive visibility avoids changing the source spreadsheet.
+    const style=document.getElementById('table-display-rules');
+    if(!style){ const s=document.createElement('style');s.id='table-display-rules';s.textContent='.mobile-table{display:none}@media(max-width:620px){.desktop-table{display:none}.mobile-table{display:table}}';document.head.appendChild(s); }
+    const fragment=document.createDocumentFragment();fragment.append(desktop,mobile);return fragment;
+  }
+  async function loadGroup({id,gid}) {
+    const target=document.getElementById(id);
+    try {
+      const response=await fetch(`${base}?gid=${gid}&single=true&output=csv&_=${Date.now()}`,{cache:'no-store'});
+      if(!response.ok) throw new Error(`HTTP ${response.status}`);
+      const text=await response.text();
+      target.replaceChildren(renderTable(parseCSV(text)));
+      return true;
+    } catch(err) {
+      console.error(id,err);
+      const p=document.createElement('p');p.className='message error';p.textContent='Unable to load standings. Please try refreshing the page.';
+      target.replaceChildren(p);return false;
+    }
+  }
+  async function refresh() {
+    const results=await Promise.all(groups.map(loadGroup));
+    if(results.every(Boolean)) document.getElementById('updated').textContent='Updated: '+new Date().toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'})+' · Refreshes every 2 minutes';
+  }
+  refresh();
+  setInterval(refresh,120000);
+</script>
+</body>
+</html>
